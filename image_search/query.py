@@ -70,11 +70,23 @@ def load_index(index_source: str):
     return index, meta
 
 
+# Global model cache
+_model_cache = {}
+_index_cache = {}
+
 def search_image(query_image_path: str, index_dir: str, top_k: int = 5, model_name: str = "clip-ViT-B-32", device: str = "cpu") -> List[dict]:
     if not os.path.isfile(query_image_path):
         raise FileNotFoundError(f"Query image not found: {query_image_path}")
-    index, meta = load_index(index_dir)
-    model = SentenceTransformer(model_name, device=device)
+    
+    # Cache index and model
+    cache_key = f"{index_dir}_{model_name}_{device}"
+    if cache_key not in _index_cache:
+        _index_cache[cache_key] = load_index(index_dir)
+    index, meta = _index_cache[cache_key]
+    
+    if cache_key not in _model_cache:
+        _model_cache[cache_key] = SentenceTransformer(model_name, device=device)
+    model = _model_cache[cache_key]
 
     img = Image.open(query_image_path).convert("RGB")
     q = model.encode([img], convert_to_numpy=True, normalize_embeddings=True, show_progress_bar=False).astype("float32")

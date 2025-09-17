@@ -2,11 +2,20 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 import base64, os, tempfile
 from typing import List, Optional
+import gc
 
 # Copy your EmbeddingService into this repo as embedding_service.py (see below)
 from embedding_service import get_embedding_service
 
 app = FastAPI(title="Modo Embedding Service")
+
+# Memory optimization for Render
+@app.middleware("http")
+async def memory_cleanup_middleware(request, call_next):
+    response = await call_next(request)
+    # Force garbage collection after each request
+    gc.collect()
+    return response
 
 class SearchRequest(BaseModel):
   image_data: str

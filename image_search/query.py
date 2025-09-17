@@ -3,6 +3,8 @@ import os
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("MKL_NUM_THREADS", "1")
+# Fix meta tensor issues
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "max_split_size_mb:128")
 
 import json
 import hashlib
@@ -85,7 +87,18 @@ def search_image(query_image_path: str, index_dir: str, top_k: int = 5, model_na
     index, meta = _index_cache[cache_key]
     
     if cache_key not in _model_cache:
-        _model_cache[cache_key] = SentenceTransformer(model_name, device=device)
+        # Fix meta tensor device issue
+        import torch
+        # Ensure we're using CPU properly
+        if device == "cpu":
+            torch.set_default_device("cpu")
+            torch.set_default_tensor_type(torch.FloatTensor)
+        try:
+            _model_cache[cache_key] = SentenceTransformer(model_name, device=device)
+        except Exception as e:
+            # Fallback: try loading without device specification
+            print(f"Model loading failed with device={device}, trying without device: {e}")
+            _model_cache[cache_key] = SentenceTransformer(model_name)
     model = _model_cache[cache_key]
 
     img = Image.open(query_image_path).convert("RGB")

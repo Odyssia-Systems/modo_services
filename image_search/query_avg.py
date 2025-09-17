@@ -32,7 +32,18 @@ def search_topk(query_image_path: str, index_dir: str, top_k: int, model_name: s
     index, meta = _index_cache[cache_key]
     
     if cache_key not in _model_cache:
-        _model_cache[cache_key] = SentenceTransformer(model_name, device=device)
+        # Fix meta tensor device issue
+        import torch
+        # Ensure we're using CPU properly
+        if device == "cpu":
+            torch.set_default_device("cpu")
+            torch.set_default_tensor_type(torch.FloatTensor)
+        try:
+            _model_cache[cache_key] = SentenceTransformer(model_name, device=device)
+        except Exception as e:
+            # Fallback: try loading without device specification
+            print(f"Model loading failed with device={device}, trying without device: {e}")
+            _model_cache[cache_key] = SentenceTransformer(model_name)
     model = _model_cache[cache_key]
 
     img = Image.open(query_image_path).convert("RGB")

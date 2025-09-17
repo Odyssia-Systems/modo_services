@@ -18,8 +18,8 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, current_dir)
 
 # Import our embedding functions
-from archive.image_search.query import search_image
-from archive.image_search.query_avg import search_topk, average_amount_sold
+from image_search.query import search_image
+from image_search.query_avg import search_topk, average_amount_sold
 
 class EmbeddingService:
     def __init__(self, index_dir: str = None):

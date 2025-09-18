@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-import base64, os, tempfile
+import base64, os, tempfile, time
 from typing import List, Optional
 import gc
 
@@ -8,6 +8,9 @@ import gc
 from embedding_service import get_embedding_service
 
 app = FastAPI(title="Modo Embedding Service")
+
+# Process start time (for deploy verification)
+START_TIME = int(time.time())
 
 # Memory optimization for Render
 @app.middleware("http")
@@ -74,3 +77,12 @@ def batch(req: BatchRequest):
     for p in paths:
       try: os.remove(p)
       except: pass
+
+@app.get("/version")
+def version():
+  return {
+    "start_time": START_TIME,
+    "commit": os.getenv("RENDER_GIT_COMMIT"),
+    "hf_home": os.getenv("HF_HOME"),
+    "transformers_cache": os.getenv("TRANSFORMERS_CACHE"),
+  }

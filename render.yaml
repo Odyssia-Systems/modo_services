@@ -4,7 +4,17 @@ services:
     env: python
     plan: starter
     buildCommand: |
-      pip install -r requirements.txt
+      set -e
+      mkdir -p /opt/render/project/.pip-wheels /opt/render/project/.hf-cache
+      # Build wheels into a persistent wheelhouse (first build will download, next builds reuse)
+      pip wheel -r requirements.txt -w /opt/render/project/.pip-wheels || true
+      # Install from the local wheelhouse when available
+      pip install --no-index --find-links /opt/render/project/.pip-wheels -r requirements.txt
+      # Warm up Hugging Face cache so the CLIP model is downloaded at build time (persisted)
+      python - <<'PY'
+from sentence_transformers import SentenceTransformer
+SentenceTransformer('clip-ViT-B-32')
+PY
     startCommand: |
       uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1
     envVars:
@@ -16,3 +26,7 @@ services:
         value: "1"
       - key: MKL_NUM_THREADS
         value: "1"
+      - key: HF_HOME
+        value: /opt/render/project/.hf-cache
+      - key: TRANSFORMERS_CACHE
+        value: /opt/render/project/.hf-cache

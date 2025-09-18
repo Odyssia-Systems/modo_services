@@ -4,7 +4,10 @@ services:
     env: python
     plan: starter
     buildCommand: |
-      pip install -r requirements_light.txt
+      set -e
+      mkdir -p /opt/render/project/.pip-wheels
+      pip wheel -r requirements_light.txt -w /opt/render/project/.pip-wheels || true
+      pip install --no-index --find-links /opt/render/project/.pip-wheels -r requirements_light.txt
     startCommand: |
       uvicorn main_light:app --host 0.0.0.0 --port $PORT --workers 1
     envVars:

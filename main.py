@@ -28,6 +28,10 @@ class BatchRequest(BaseModel):
   images_data: List[str]
   top_k: int = 5
 
+class TrendsRequest(BaseModel):
+  images_data: List[str]
+  top_k_items: int = 3
+
 def _write_temp_image(b64: str) -> str:
   if b64.startswith("data:"):
     b64 = b64.split(",", 1)[1]
@@ -73,6 +77,25 @@ def batch(req: BatchRequest):
     for b in req.images_data:
       paths.append(_write_temp_image(b))
     return svc.batch_search(paths, req.top_k)
+  finally:
+    for p in paths:
+      try: os.remove(p)
+      except: pass
+
+@app.post("/trends")
+def trends(req: TrendsRequest):
+  svc = get_embedding_service()
+  paths: List[str] = []
+  try:
+    for i, b64 in enumerate(req.images_data):
+      fd, p = tempfile.mkstemp(suffix=f"_{i}.jpg"); os.close(fd)
+      with open(p, "wb") as f:
+        # Support optional data: URL prefix
+        if b64.startswith("data:"):
+          b64 = b64.split(",", 1)[1]
+        f.write(base64.b64decode(b64))
+      paths.append(p)
+    return svc.top_trend_matches(paths, top_k_items=req.top_k_items)
   finally:
     for p in paths:
       try: os.remove(p)

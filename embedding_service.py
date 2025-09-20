@@ -20,6 +20,7 @@ sys.path.insert(0, current_dir)
 # Import our embedding functions
 from image_search.query import search_image
 from image_search.query_avg import search_topk, average_amount_sold
+from sentence_transformers import SentenceTransformer
 
 class EmbeddingService:
     def __init__(self, index_dir: str = None):
@@ -30,10 +31,40 @@ class EmbeddingService:
         self.index_dir = index_dir
         self.model_name = "clip-ViT-B-32"
         self.device = "cpu"
+        # Trend labels cache
+        self._trend_labels_cache: Dict[str, Any] = {"labels": None, "embeddings": None, "model_name": self.model_name}
         
         # Verify index exists
         if not os.path.exists(os.path.join(index_dir, "image_index.faiss")):
             raise FileNotFoundError(f"Index not found at {index_dir}")
+
+    def _load_trend_labels(self, labels: Optional[List[str]] = None, labels_path: Optional[str] = None) -> List[str]:
+        if labels:
+            return labels
+        labels_path = labels_path or os.getenv("TRENDS_LABELS_PATH")
+        if not labels_path:
+            import glob
+            pattern = os.path.join(os.getcwd(), "trends_labels_*.txt")
+            files = sorted(glob.glob(pattern))
+            if files:
+                labels_path = files[-1]
+        if labels_path and os.path.exists(labels_path):
+            out: List[str] = []
+            seen = set()
+            with open(labels_path, "r", encoding="utf-8") as f:
+                for ln in f:
+                    s = (ln or "").strip()
+                    if s and s not in seen:
+                        out.append(s)
+                        seen.add(s)
+            return out
+        return [
+            "black leather jacket",
+            "wide leg jeans",
+            "oversized blazer",
+            "puffer jacket",
+            "denim skirt",
+        ]
     
     def _encode_image_to_base64(self, image_path: str) -> str:
         """Convert image to base64 data URI for web display"""
@@ -198,6 +229,57 @@ class EmbeddingService:
                 "total_images": len(image_paths),
                 "successful_searches": 0
             }
+
+    def top_trend_matches(self, image_paths: List[str], top_k_items: int = 3, labels: Optional[List[str]] = None, labels_path: Optional[str] = None) -> Dict[str, Any]:
+        try:
+            labels_list = self._load_trend_labels(labels, labels_path)
+            if not labels_list:
+                return {"success": False, "error": "No trend labels available", "top_items": []}
+
+            cache = self._trend_labels_cache
+            if (
+                cache.get("labels") is None
+                or cache.get("model_name") != self.model_name
+                or cache.get("labels") != labels_list
+            ):
+                txt_model = SentenceTransformer(self.model_name, device=self.device)
+                txt_embs = txt_model.encode(labels_list, convert_to_numpy=True, normalize_embeddings=True)
+                cache.update({"labels": labels_list, "embeddings": txt_embs, "model_name": self.model_name})
+            else:
+                txt_embs = cache["embeddings"]
+
+            img_model = SentenceTransformer(self.model_name, device=self.device)
+            pil_images = []
+            valid_paths: List[str] = []
+            for p in image_paths:
+                try:
+                    with Image.open(p) as im:
+                        pil_images.append(im.convert("RGB").copy())
+                        valid_paths.append(p)
+                except Exception:
+                    pass
+            if not pil_images:
+                return {"success": False, "error": "No valid images", "top_items": []}
+
+            img_embs = img_model.encode(pil_images, convert_to_numpy=True, normalize_embeddings=True)
+            for im in pil_images:
+                try:
+                    im.close()
+                except Exception:
+                    pass
+
+            sims = img_embs @ txt_embs.T
+            best: List[Dict[str, Any]] = []
+            for i, path in enumerate(valid_paths):
+                j = int(np.argmax(sims[i]))
+                score = float(sims[i][j])
+                item = {"image_path": path, "best_trend": labels_list[j], "score": score}
+                item = self._add_image_urls([item])[0]
+                best.append(item)
+            best.sort(key=lambda x: x.get("score", 0.0), reverse=True)
+            return {"success": True, "top_items": best[:max(1, top_k_items)], "labels_count": len(labels_list), "model": self.model_name}
+        except Exception as e:
+            return {"success": False, "error": str(e), "top_items": []}
 
 # Global service instance
 _embedding_service = None
